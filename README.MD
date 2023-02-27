@@ -4,6 +4,8 @@
 
 ## All your py-files and any other file you want to add to your app need to be in the ROOT of your env.
 
+### pip install env2installer
+
 ### Please install:
 
 #### pyinstaller
