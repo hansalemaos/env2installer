@@ -23,8 +23,8 @@ pip install -U pyinstaller
 ```python
 from env2installer import create_installer_exe
 
-# the file for the icon, size doesn't matter
-image_for_icon = r"C:\Users\Gamer\Videos\bilder2\2021-02-06 03_49_36-Window.png"
+# the file for the icon, size doesn't matter, but it must be a png file and can't have spaces
+image_for_icon = r"C:\Users\Gamer\Videos\bilder2\2021-02-0603_49_36-Window.png"
 
 # there will be 2 output folders: c:\proxytyri_temp and c:\proxytyri
 # the setup-up file will be: "C:\proxytyri\proxyfilesdownl_setup.exe"
@@ -58,4 +58,32 @@ create_installer_exe(
     excludepackages=("pip",), # packages you want to exclude 
     add_to_pyinstaller_cmd=''  # commands to add to pyinstaller, like "--noconsole"
 )
+
+
+# For multiple py to exe (the first file will be the entry)
+pyfiles = [
+    r"C:\Users\Gamer\anaconda3\envs\subproctest\f1.py",
+    r"C:\Users\Gamer\anaconda3\envs\subproctest\fatye\f2.py",
+    r"C:\Users\Gamer\anaconda3\envs\subproctest\fatye\f3.py",
+]
+spefi = create_installer_exe_multi(
+    pyfiles,
+    appname="f1xxx",
+    image_for_icon=r"C:\Users\Gamer\Documents\Downloads\xxxxx.png",
+    autor="arni",
+    magickpath=r"C:\Program Files\ImageMagick-7.1.0-Q16-HDRI\magick.exe",
+    outputfolder="c:\\proxytyrixxx982111xxxdewddaxxxx",
+    version="982",  # version as string
+    LicenseFile=None,
+    # If None, an empty file will be added. The license file will be shown to the user during the installation.
+    InfoBeforeFile=None,
+    # If None, an empty file will be added. The file will be shown to the user during the installation.
+    InfoAfterFile=None,
+    # If None, an empty file will be added. The file will be shown to the user during the installation.
+    url="https://127.0.0.1",  # your url
+    innosetupfilepath=r"C:\Program Files (x86)\Inno Setup 6\Compil32.exe",  # the Inno Setup executable
+    excludepackages=("pip",),  # packages you want to exclude
+    add_to_pyinstaller_cmd="--noconsole",  # commands to add to pyinstaller, like "--noconsole"
+)
+
 ```
