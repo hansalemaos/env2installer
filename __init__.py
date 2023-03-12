@@ -3,13 +3,180 @@ import subprocess
 import sys
 import tempfile
 import uuid
-
-from PIL import Image
-from flexible_partial import FlexiblePartialOwnName
-from touchtouch import touch
 import os
 
 sysp = os.path.normpath(os.sep.join(sys.executable.split(os.sep)[:-1]))
+import inspect
+from copy import deepcopy
+
+
+def copy_func(f):
+    if callable(f):
+        if inspect.ismethod(f) or inspect.isfunction(f):
+            g = lambda *args, **kwargs: f(*args, **kwargs)
+            t = list(filter(lambda prop: not ("__" in prop), dir(f)))
+            i = 0
+            while i < len(t):
+                setattr(g, t[i], getattr(f, t[i]))
+                i += 1
+            return g
+    dcoi = deepcopy([f])
+    return dcoi[0]
+
+
+class FlexiblePartial:
+    def __init__(self, func, this_args_first=True, *args, **kwargs):
+
+        self.this_args_first = this_args_first
+        try:
+            self.modulename = func.__module__
+        except Exception:
+            self.modulename = ""
+
+        try:
+            self.functionname = func.__name__
+        except Exception:
+            try:
+                self.functionname = func.__qualname__
+            except Exception:
+                self.functionname = "func"
+
+        try:
+            self.f = copy_func(func)
+        except Exception:
+            self.f = func
+        try:
+            self.args = copy_func(list(args))
+        except Exception:
+            self.args = args
+
+        try:
+            self.kwargs = copy_func(kwargs)
+        except Exception:
+            try:
+                self.kwargs = kwargs.copy()
+            except Exception:
+                self.kwargs = kwargs
+
+        self.name_to_print = self._create_name()
+
+    def _create_name(self):
+        if self.modulename != "":
+            stra = self.modulename + "." + self.functionname + "("
+        else:
+            stra = self.functionname + "("
+
+        for _ in self.args:
+            stra = stra + repr(_) + ", "
+        for key, item in self.kwargs.items():
+            stra = stra + str(key) + "=" + repr(item) + ", "
+        stra = stra.rstrip().rstrip(",")
+        stra += ")"
+        if len(stra) > 100:
+            stra = stra[:95] + "...)"
+        return stra
+
+    def __call__(self, *args, **kwargs):
+        newdic = {}
+        newdic.update(self.kwargs)
+        newdic.update(kwargs)
+        if self.this_args_first:
+            return self.f(*self.args, *args, **newdic)
+
+        else:
+
+            return self.f(*args, *self.args, **newdic)
+
+    def __str__(self):
+        return self.name_to_print
+
+    def __repr__(self):
+        return self.__str__()
+
+
+class FlexiblePartialOwnName:
+    r"""
+    FlexiblePartial(
+            remove_file,
+            "()",
+            True,
+            fullpath_on_device=x.aa_fullpath,
+            adb_path=adb_path,
+            serialnumber=device,
+        )
+
+    """
+
+    def __init__(
+        self, func, funcname: str, this_args_first: bool = True, *args, **kwargs
+    ):
+
+        self.this_args_first = this_args_first
+        self.funcname = funcname
+        try:
+            self.f = copy_func(func)
+        except Exception:
+            self.f = func
+        try:
+            self.args = copy_func(list(args))
+        except Exception:
+            self.args = args
+
+        try:
+            self.kwargs = copy_func(kwargs)
+        except Exception:
+            try:
+                self.kwargs = kwargs.copy()
+            except Exception:
+                self.kwargs = kwargs
+
+    def __call__(self, *args, **kwargs):
+        newdic = {}
+        newdic.update(self.kwargs)
+        newdic.update(kwargs)
+        if self.this_args_first:
+            return self.f(*self.args, *args, **newdic)
+
+        else:
+
+            return self.f(*args, *self.args, **newdic)
+
+    def __str__(self):
+        return self.funcname
+
+    def __repr__(self):
+        return self.funcname
+
+
+def touch(path: str) -> bool:
+    # touch('f:\\dada\\baba\\caca\\myfile.html')
+    # original: https://github.com/andrewp-as-is/touch.py (not working anymore)
+    def _fullpath(path):
+        return os.path.abspath(os.path.expanduser(path))
+
+    def _mkdir(path):
+        path = path.replace("\\", "/")
+        if path.find("/") > 0 and not os.path.exists(os.path.dirname(path)):
+            os.makedirs(os.path.dirname(path))
+
+    def _utime(path):
+        try:
+            os.utime(path, None)
+        except Exception:
+            open(path, "a").close()
+
+    def touch_(path):
+        if path:
+            path = _fullpath(path)
+            _mkdir(path)
+            _utime(path)
+
+    try:
+        touch_(path)
+        return True
+    except Exception as Fe:
+        print(Fe)
+        return False
 
 
 def get_all_non_py_files_in_root():
@@ -137,7 +304,7 @@ def get_distpath_vars(dispath):
     return dispath, distemp
 
 
-def create_installer(
+def create_installer_spec(
     imageforicon,
     outputfolder,
     mainfile,
@@ -158,7 +325,7 @@ def create_installer(
     mainfile = os.path.normpath(mainfile)
     paths = get_path_of_others(fo)
     dispath, distemp = get_distpath_vars(dispath=outputfolder)
-    whoco = rf"pyinstaller {add_to_cmd} --noconfirm --onedir{dispath}{distemp}--icon {nameiconfile} --name {name} --clean {adddata} {paths} {allimportscommandstr} {mainfile}"
+    whoco = rf"pyi-makespec {add_to_cmd} --onedir --icon {nameiconfile} --name {name} {paths} {allimportscommandstr} {mainfile}"
 
     fosc = os.path.join(fo, "Scripts")
     batchfile = os.path.join(fosc, "makeinstaller.bat")
@@ -171,7 +338,7 @@ def create_installer(
     with open(batchfile, mode="w", encoding="utf-8") as f:
         f.write(f"""{whoco}\n""")
 
-    subprocess.run(batchfile2, shell=True)
+    dox = subprocess.run(batchfile2, shell=True, capture_output=True)
     try:
         os.remove(batchfile2)
     except Exception:
@@ -180,39 +347,77 @@ def create_installer(
         os.remove(batchfile)
     except Exception:
         pass
+    return [
+        x.decode("utf-8", "ignore")[6:-1]
+        for x in dox.stdout.splitlines()
+        if x.startswith(b"Wrote ")
+    ][0]
+
+
+# def write_icon_file(imagepath, nameiconfile, nameiconfile_bw, magickpath="magick"):
+#     magick_convert_command = f'"{magickpath}" convert'
+#
+#     icon = Image.open(imagepath)
+#     allpictures = {}
+#     different_sizes = [16, 32, 128, 256, 512]
+#     for size in different_sizes:
+#         pic = icon.resize((size, size))
+#         allpictures[f"{size}x{size}_temppic.png"] = pic.copy()
+#
+#     for path, pic in allpictures.items():
+#         pic.save(path)
+#         magick_convert_command = magick_convert_command + f" {path}"
+#
+#     magick_convert_command = magick_convert_command + f" {nameiconfile}"
+#     os.system(magick_convert_command)
+#
+#     for path, pic in allpictures.items():
+#         pic = pic.convert("L").convert("RGB")
+#         pic.save(path)
+#         magick_convert_command = magick_convert_command + f" {path}"
+#
+#     magick_convert_command = magick_convert_command + f" {nameiconfile_bw}"
+#     os.system(magick_convert_command)
+#
+#     for path, pic in allpictures.items():
+#         try:
+#             os.remove(path)
+#         except Exception as Fehler:
+#             print(Fehler)
+#     print(magick_convert_command)
+#     return imagepath, nameiconfile, nameiconfile_bw
 
 
 def write_icon_file(imagepath, nameiconfile, nameiconfile_bw, magickpath="magick"):
+    magickpath = os.path.normpath(magickpath)
     magick_convert_command = f'"{magickpath}" convert'
-
-    icon = Image.open(imagepath)
-    allpictures = {}
     different_sizes = [16, 32, 128, 256, 512]
+    iconcmd = magick_convert_command
+    todelete = []
     for size in different_sizes:
-        pic = icon.resize((size, size))
-        allpictures[f"{size}x{size}_temppic.png"] = pic.copy()
+        t, dt = get_tmpfile(".png")
+        t = os.path.normpath(f"{os.sep}".join(t.split(os.sep)[:-1]))
+        path = os.path.normpath(os.path.join(t, f"{size}x{size}_temppic.png"))
+        todelete.append(path)
+        magick_convert_command1 = (
+            f"{magick_convert_command} {imagepath} -resize {size}x{size} {path}"
+        )
+        os.system(magick_convert_command1)
+        iconcmd = iconcmd + f" {imagepath}"
 
-    for path, pic in allpictures.items():
-        pic.save(path)
-        magick_convert_command = magick_convert_command + f" {path}"
+    iconcmd = iconcmd + f" {nameiconfile}"
+    os.system(iconcmd)
+    magick_convert_command2 = (
+        f'"{magickpath}" convert {nameiconfile} -colorspace Gray {nameiconfile_bw}'
+    )
+    os.system(magick_convert_command2)
 
-    magick_convert_command = magick_convert_command + f" {nameiconfile}"
-    os.system(magick_convert_command)
-
-    for path, pic in allpictures.items():
-        pic = pic.convert("L").convert("RGB")
-        pic.save(path)
-        magick_convert_command = magick_convert_command + f" {path}"
-
-    magick_convert_command = magick_convert_command + f" {nameiconfile_bw}"
-    os.system(magick_convert_command)
-
-    for path, pic in allpictures.items():
+    for path in todelete:
         try:
             os.remove(path)
         except Exception as Fehler:
             print(Fehler)
-    print(magick_convert_command)
+
     return imagepath, nameiconfile, nameiconfile_bw
 
 
@@ -374,7 +579,144 @@ def get_tmpfile(suffix=".bin"):
     return filename, _get_remove_file(filename)
 
 
-def create_installer_exe(
+def create_installer_exe_multi(
+    pyfiles,
+    appname,
+    image_for_icon,
+    autor,
+    magickpath,
+    outputfolder,
+    version,  # version as string
+    LicenseFile=None,
+    # If None, an empty file will be added. The license file will be shown to the user during the installation.
+    InfoBeforeFile=None,
+    # If None, an empty file will be added. The file will be shown to the user during the installation.
+    InfoAfterFile=None,
+    # If None, an empty file will be added. The file will be shown to the user during the installation.
+    url="https://127.0.0.1",  # your url
+    innosetupfilepath=r"C:\Program Files (x86)\Inno Setup 6\Compil32.exe",  # the Inno Setup executable
+    excludepackages=("pip",),  # packages you want to exclude
+    add_to_pyinstaller_cmd="--noconsole",  # commands to add to pyinstaller, like "--noconsole"
+):
+    if not LicenseFile:
+        LicenseFile, LicenseFile_remove_file = get_tmpfile(suffix=".txt")
+    if not InfoBeforeFile:
+        InfoBeforeFile, InfoBeforeFile_remove_file = get_tmpfile(suffix=".txt")
+    if not InfoAfterFile:
+        InfoAfterFile, InfoAfterFile_remove_file = get_tmpfile(suffix=".txt")
+    allspefi = []
+    realapp = appname
+    for ini, pyfile in enumerate(pyfiles):
+        appname = pyfile.split(os.sep)[-1][:-3]
+        if ini == 0:
+            realapp = appname
+        do = _create_installer_exe_multi(
+            image_for_icon,
+            outputfolder,
+            pyfile,
+            appname,
+            autor,
+            version=version,  # version as string
+            LicenseFile=LicenseFile,  # If None, an empty file will be added. The license file will be shown to the user during the installation.
+            InfoBeforeFile=InfoBeforeFile,  # If None, an empty file will be added. The file will be shown to the user during the installation.
+            InfoAfterFile=InfoAfterFile,  # If None, an empty file will be added. The file will be shown to the user during the installation.
+            url=url,  # your url
+            innosetupfilepath=innosetupfilepath,  # the Inno Setup executable
+            magickpath=magickpath,  # path of ImageMagick
+            excludepackages=excludepackages,  # packages you want to exclude
+            add_to_pyinstaller_cmd=add_to_pyinstaller_cmd,  # commands to add to pyinstaller, like "--noconsole"
+        )
+        allspefi.append(do)
+
+    spefi = allspefi
+    allfi = []
+    for s in spefi:
+        with open(s, mode="r", encoding="utf-8") as f:
+            data = f.read()
+            allfi.append(data)
+    for l in range(len(allfi)):
+        for i, q in [
+            (ini, x)
+            for ini, x in enumerate(
+                allfi[l].split("block_cipher = None", maxsplit=1)[-1].splitlines()
+            )
+        ]:
+            if re.search(r"\b(?:a)|(?:exe)|(?:pyz)\b", q):
+                newq = re.sub(r"\b(a)\b", r"\g<1>" + "v" * (l + 1), q)
+                newq = re.sub(r"\b(exe)\b", ("v" * (l + 1)) + r"\g<1>", newq)
+                newq = re.sub(r"\b(pyz)\b", ("v" * (l + 1)) + r"\g<1>", newq)
+
+                einfu = len(
+                    allfi[l].split("block_cipher = None", maxsplit=1)[0].splitlines()
+                )
+                print(i + einfu, newq)
+                allfi2 = allfi[l].splitlines()
+                allfi2[i + einfu] = newq
+                allfi[l] = "\n".join(allfi2)
+
+    wholecommand = []
+    checking = [")", "coll = COLLECT("]
+    for a in allfi:
+        fo = re.findall(rf"coll =.*\)", a, flags=re.DOTALL)
+        for z in fo[0].splitlines():
+            if z.strip() not in checking:
+                if z.strip().startswith("name="):
+                    continue
+                wholecommand.append(z)
+                checking.append(z.strip())
+    wholecommandnoeq = []
+    wholecommandeq = [f"name='{realapp}',"]
+    for q in wholecommand:
+        if "=" not in q:
+            wholecommandnoeq.append(q)
+        else:
+            wholecommandeq.append(q)
+    ali = wholecommandnoeq + wholecommandeq
+    print(ali)
+    wholecommandstr = "coll = COLLECT(\n" + "\n".join(ali) + "\n)"
+
+    start = (
+        allfi[0].split("block_cipher = None", maxsplit=1)[0] + "\nblock_cipher = None"
+    )
+    middle = ""
+    for l in allfi:
+        q = l.split("block_cipher = None", maxsplit=1)[-1]
+        newli = re.sub(rf"coll =.*\)", "", q, flags=re.DOTALL)
+        print(newli)
+        middle = middle + "\n" + newli + "\n"
+    allto = start + "\n" + middle + "\n" + wholecommandstr
+    print(allto)
+    psa = os.path.join(os.getcwd(), f"{realapp}.spec")
+    with open(psa, mode="w", encoding="utf-8") as f:
+        f.write(allto)
+
+    if not os.path.exists(outputfolder):
+        os.makedirs(outputfolder)
+    dispath, distemp = get_distpath_vars(dispath=outputfolder)
+    whoco = rf"pyinstaller {psa} --noconfirm {dispath}{distemp} --clean"
+    subprocess.run(whoco, shell=True)
+    nameiconfile, nameiconfile_bw = create_icon(
+        imagepath=image_for_icon, fo=sysp, magickpath=magickpath
+    )
+    setup_file = write_setup_file(
+        path=os.path.normpath(os.path.join(outputfolder, realapp)),
+        appname=realapp,
+        iconpfad=nameiconfile,
+        LicenseFile=LicenseFile,
+        InfoBeforeFile=InfoBeforeFile,
+        InfoAfterFile=InfoAfterFile,
+        name_of_exe=realapp + ".exe",
+        version=version,
+        url=url,
+        autor=autor,
+        outputfolder=outputfolder,
+    )
+
+    subprocess.run(f'''\"{innosetupfilepath}\" /cc "{setup_file}"''')
+    return setup_file
+
+
+def _create_installer_exe_multi(
     image_for_icon,
     outputfolder,
     pyfile,
@@ -387,7 +729,8 @@ def create_installer_exe(
     url="https://127.0.0.1",
     innosetupfilepath=r"C:\Program Files (x86)\Inno Setup 6\Compil32.exe",
     magickpath="magick",
-    excludepackages=(),add_to_pyinstaller_cmd=''
+    excludepackages=(),
+    add_to_pyinstaller_cmd="",
 ):
 
     image_for_icon = os.path.normpath(image_for_icon)
@@ -405,14 +748,98 @@ def create_installer_exe(
         imagepath=image_for_icon, fo=sysp, magickpath=magickpath
     )
 
+    return create_installer_spec(
+        imageforicon=nameiconfile,
+        outputfolder=outputfolder,
+        mainfile=pyfile,
+        exclude=excludepackages,
+        appname=appname,
+        add_to_cmd=add_to_pyinstaller_cmd.strip(),
+    )
+
+
+def create_installer(
+    imageforicon,
+    outputfolder,
+    mainfile,
+    appname,
+    exclude,
+    add_to_cmd="",
+):
+
+    allimportscommandstr = get_all_package_imports(exclude)
+    nonpyfiles = get_all_non_py_files_in_root()
+    adddata = add_binary_to_files(nonpyfiles)
+    fo = os.path.normpath("\\".join(sys.executable.split("\\")[:-1]))
+
+    nameiconfile = imageforicon
+    name = appname
+    envname = sys.executable.split(os.sep)[-2]
+
+    mainfile = os.path.normpath(mainfile)
+    paths = get_path_of_others(fo)
+    dispath, distemp = get_distpath_vars(dispath=outputfolder)
+    whoco = rf"pyinstaller {add_to_cmd} --noconfirm --onedir{dispath}{distemp}--icon {nameiconfile} --name {name} --clean {adddata} {paths} {allimportscommandstr} {mainfile}"
+
+    fosc = os.path.join(fo, "Scripts")
+    batchfile = os.path.join(fosc, "makeinstaller.bat")
+    batchfile2 = os.path.join(fosc, "exemakeinstaller.bat")
+    hdd = fo[:2]
+    with open(batchfile2, mode="w", encoding="utf-8") as f:
+        f.write(
+            f"""{hdd}\ncd\\\ncd {fo}\ncd Scripts\nCALL activate {envname}\nCALL {batchfile}\n"""
+        )
+    with open(batchfile, mode="w", encoding="utf-8") as f:
+        f.write(f"""{whoco}\n""")
+
+    subprocess.run(batchfile2, shell=True)
+    try:
+        os.remove(batchfile2)
+    except Exception:
+        pass
+    try:
+        os.remove(batchfile)
+    except Exception:
+        pass
+
+
+def create_installer_exe(
+    image_for_icon,
+    outputfolder,
+    pyfile,
+    appname,
+    autor,
+    version="1",
+    LicenseFile=None,
+    InfoBeforeFile=None,
+    InfoAfterFile=None,
+    url="https://127.0.0.1",
+    innosetupfilepath=r"C:\Program Files (x86)\Inno Setup 6\Compil32.exe",
+    magickpath="magick",
+    excludepackages=(),
+    add_to_pyinstaller_cmd="",
+):
+    image_for_icon = os.path.normpath(image_for_icon)
+    outputfolder = os.path.normpath(outputfolder)
+    pyfile = os.path.normpath(pyfile)
+    version = str(version)
+    if not LicenseFile:
+        LicenseFile, LicenseFile_remove_file = get_tmpfile(suffix=".txt")
+    if not InfoBeforeFile:
+        InfoBeforeFile, InfoBeforeFile_remove_file = get_tmpfile(suffix=".txt")
+    if not InfoAfterFile:
+        InfoAfterFile, InfoAfterFile_remove_file = get_tmpfile(suffix=".txt")
+    nameiconfile, nameiconfile_bw = create_icon(
+        imagepath=image_for_icon, fo=sysp, magickpath=magickpath
+    )
     create_installer(
         imageforicon=nameiconfile,
         outputfolder=outputfolder,
         mainfile=pyfile,
         exclude=excludepackages,
-        appname=appname, add_to_cmd=add_to_pyinstaller_cmd.strip()
+        appname=appname,
+        add_to_cmd=add_to_pyinstaller_cmd.strip(),
     )
-
     setup_file = write_setup_file(
         path=os.path.normpath(os.path.join(outputfolder, appname)),
         appname=appname,
@@ -426,7 +853,5 @@ def create_installer_exe(
         autor=autor,
         outputfolder=outputfolder,
     )
-
     subprocess.run(f'''\"{innosetupfilepath}\" /cc "{setup_file}"''')
     return setup_file
-
